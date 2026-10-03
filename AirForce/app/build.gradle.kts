@@ -17,7 +17,7 @@ val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-// 局域网更新服务地址，例如 http://192.168.1.13:8765
+// 局域网更新服务地址，例如 http://192.168.1.100:8765
 // 只有本机开发时才需要在 local.properties 里配这一行，不配就只走公网源。
 val lanUpdateUrl = localProps.getProperty("lanUpdateUrl") ?: ""
 
