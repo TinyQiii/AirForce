@@ -35,6 +35,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        // 必须放在最前面：SharedPreferences 一旦被加载过，再改磁盘文件就没用了。
+        // 这里会检查 files/import/ 下有没有外部推进来的存档。
+        val importedSaves = SaveTransfer.importIfAny(this)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             window.attributes.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
@@ -114,6 +118,14 @@ class MainActivity : Activity() {
         }
 
         hideSystemBars()
+
+        if (importedSaves > 0) {
+            Toast.makeText(
+                this,
+                "已导入 $importedSaves 个存档文件，进度已恢复",
+                Toast.LENGTH_LONG
+            ).show()
+        }
 
         // 启动后稍等片刻再查更新，避免和开场画面抢注意力
         root.postDelayed({ checkForUpdate() }, 1500)
@@ -246,6 +258,8 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         game.pause()
+        // 顺手把存档导出一份到 files/export/，换机或重装时可以直接取走
+        SaveTransfer.exportAll(this)
         music.onPause()
         sound.pause()
     }
