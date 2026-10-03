@@ -5,8 +5,12 @@ import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -17,6 +21,7 @@ import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -57,6 +62,11 @@ class GameView(
         const val STAR_MILE_ROWS = 6    // 星级里程碑条数
         const val BOX_ROWS = 2          // 宝箱数量
 
+        // ---- 伪 3D ----
+        const val FOG_LEVELS = 6        // 景深雾化分档数
+        const val BOX_POPUP_TIME = 2.6f // 开箱结果弹层停留时长
+        const val BOX_FLIP_TIME = 0.46f // 翻牌动画时长
+
         // 当前正在编辑的输入框
         const val F_NONE = -1
         const val F_LG_USER = 0
@@ -83,6 +93,46 @@ class GameView(
     private val bgDst = RectF()
     private val wingPath = android.graphics.Path()
     private val bold = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+
+    // ============================================================
+    //  伪 3D 渲染参数
+    //  纯 Canvas 2D 引擎，没有真正的深度缓冲，所有立体感都靠
+    //  「透视投影 + 景深雾化 + 剪影投影 + 透视翻转」四招模拟。
+    // ============================================================
+
+    /** 透视焦距（dp）：越大视野越窄、纵深拉得越长 */
+    private val focal = dp(150f)
+    /** 深度范围：zNear 贴脸，zFar 最远 */
+    private val zNear = 0.06f
+    private val zFar = 1f
+    /** 拖尾倍数：用「更远一点」的深度投出拖尾起点，形成拉丝 */
+    private val trailK = 1.34f
+    /** 星空向镜头推进的速度范围（z / 秒） */
+    private val vzMin = 0.12f
+    private val vzMax = 0.57f
+    /** 景深雾化最浓时的混色比例（别太高，否则刚出场的敌机看不清） */
+    private val fogMax = 0.50f
+    /** 远处物体的视觉缩放下限（底部为 1.0） */
+    private val depthScaleMin = 0.88f
+
+    /** 星空拖尾画笔（每帧改 color / strokeWidth） */
+    private val warpPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+    }
+
+    /** 纯黑剪影画笔：用 SRC_IN 把贴图压成黑色，拿来画投影和「厚度层」 */
+    private val shadowPaint = Paint(Paint.FILTER_BITMAP_FLAG).apply {
+        colorFilter = PorterDuffColorFilter(0xFF000000.toInt(), PorterDuff.Mode.SRC_IN)
+    }
+
+    /** 景深雾化画笔：按档预生成 ColorMatrix，避免每帧新建对象 */
+    private val fogPaints = Array(FOG_LEVELS) { Paint(Paint.FILTER_BITMAP_FLAG) }
+    private var fogColor = 0
+
+    /** 玩家横滚角（弧度）与其上一帧 x 坐标，用来算横向速度 */
+    private var playerRoll = 0f
+    private var prevPx = 0f
 
     private val choreographer by lazy { Choreographer.getInstance() }
     private val frameCb = Choreographer.FrameCallback { doFrame(it) }
@@ -842,17 +892,32 @@ class GameView(
 
     private fun initStars() {
         stars.clear()
-        for (i in 0 until 150) {
-            val layer = Random.nextFloat()
+        for (i in 0 until 190) {
             val s = Star()
-            s.x = Random.nextFloat() * vw
-            s.y = Random.nextFloat() * vh
-            s.speed = dp(18f) + layer * dp(150f)
-            s.size = dp(0.7f) + layer * dp(1.9f)
-            s.alpha = (70 + layer * 165).toInt()
-            s.phase = Random.nextFloat() * 6.28f
+            respawnStar(s, scatter = true)
             stars.add(s)
         }
+    }
+
+    /**
+     * 让一颗星回到最远处并换一个方向。
+     * @param scatter 首次初始化时把 z 打散铺满整个纵深，避免所有星同时冲出来
+     */
+    private fun respawnStar(s: Star, scatter: Boolean = false) {
+        // 极坐标均匀撒点，保证从消失点向外辐射的方向分布自然
+        val ang = Random.nextFloat() * (2f * PI.toFloat())
+        val rad = 0.16f + Random.nextFloat() * 0.84f
+        s.dx = cos(ang) * rad
+        s.dy = sin(ang) * rad * 1.15f          // 竖屏纵向撒得更开，铺满上下
+
+        s.z = if (scatter) zNear + Random.nextFloat() * (zFar - zNear) else zFar
+
+        // 分三层速度，近处（layer 大）更快，天然形成视差
+        val layer = Random.nextFloat()
+        s.vz = vzMin + layer * (vzMax - vzMin)
+        s.size = dp(0.7f) + layer * dp(1.8f)
+        s.alpha = (80 + layer * 165).toInt()
+        s.phase = Random.nextFloat() * 6.28f
     }
 
     private fun initNebula() {
@@ -880,6 +945,11 @@ class GameView(
             floatArrayOf(0f, 0.55f, 1f),
             Shader.TileMode.CLAMP
         )
+        // 景深雾化的目标色跟着关卡背景走，远处物体才能"融进"背景里
+        if (fogColor != level.bgMid) {
+            fogColor = level.bgMid
+            buildFogPaints()
+        }
         if (level.bgRes != bgResId || bgBitmap == null) {
             bgBitmap?.recycle()
             bgBitmap = decodeBackground(level.bgRes)
@@ -947,12 +1017,9 @@ class GameView(
 
     private fun driftStars(dt: Float, factor: Float) {
         for (s in stars) {
-            s.y += s.speed * dt * factor
+            s.z -= s.vz * dt * factor            // z 减小 = 朝镜头飞过来
             s.phase += dt * 2.4f
-            if (s.y > vh + dp(6f)) {
-                s.y = -dp(6f)
-                s.x = Random.nextFloat() * vw
-            }
+            if (s.z <= zNear) respawnStar(s)
         }
         for (n in nebs) {
             n.y += n.speed * dt * factor
@@ -966,6 +1033,13 @@ class GameView(
     private fun step(dt: Float) {
         elapsed += dt
         driftStars(dt, 1f)
+
+        // 由横向速度推横滚角：往右压右坡度、往左压左坡度，松手自动回正
+        val vxNow = if (dt > 0.0001f) (px - prevPx) / dt else 0f
+        prevPx = px
+        val rollTarget = (vxNow * 0.0022f).coerceIn(-0.5f, 0.5f)
+        playerRoll += (rollTarget - playerRoll) * min(1f, dt * 9f)
+
         if (shake > 0f) shake = max(0f, shake - dt * 2.5f)
         if (hitFlash > 0f) hitFlash = max(0f, hitFlash - dt * 3f)
         if (slowTimer > 0f) slowTimer -= dt
@@ -1204,6 +1278,8 @@ class GameView(
         py = vh * 0.78f
         tx = px
         ty = py
+        prevPx = px
+        playerRoll = 0f
         ach.add(S_GAMES, 1)
     }
 
@@ -3082,7 +3158,7 @@ class GameView(
         boxTitle = title
         boxSub = sub
         boxColor = color
-        boxTimer = 2.6f
+        boxTimer = BOX_POPUP_TIME
     }
 
     private fun buyOrSelectWingman(id: Int) {
@@ -3387,10 +3463,118 @@ class GameView(
         drawAchToast(canvas)
     }
 
+    // ---------------- 伪 3D 工具 ----------------
+
+    /** 消失点：画面略偏上，营造「朝前下方飞」的视角 */
+    private val vpX get() = vw * 0.5f
+    private val vpY get() = vh * 0.42f
+
+    /** 透视投影系数：z 越小越近，k 越大 */
+    private fun projK(z: Float) = focal / max(z, zNear)
+
+    /**
+     * 景深因子：0 = 最远（屏幕顶部），1 = 最近（屏幕底部）。
+     * 用于让远处物体缩小、变暗、雾化。
+     */
+    private fun depthAt(y: Float) = (y / max(1f, vh)).coerceIn(0f, 1f)
+
+    /** 按深度取雾化档位；depth 越小雾越浓 */
+    private fun fogIdxFor(depth: Float): Int {
+        val t = (1f - depth).coerceIn(0f, 1f)
+        return (t * (FOG_LEVELS - 1)).toInt().coerceIn(0, FOG_LEVELS - 1)
+    }
+
+    /** 按深度算视觉缩放：远处小、近处大 */
+    private fun depthScaleAt(depth: Float) = depthScaleMin + (1f - depthScaleMin) * depth
+
+    /** 按关卡背景色重建雾化画笔（颜色变了必须重建） */
+    private fun buildFogPaints() {
+        val fr = ((fogColor shr 16) and 0xFF) / 255f
+        val fg = ((fogColor shr 8) and 0xFF) / 255f
+        val fb = (fogColor and 0xFF) / 255f
+        for (i in 0 until FOG_LEVELS) {
+            val t = i / (FOG_LEVELS - 1f) * fogMax
+            val inv = 1f - t
+            // out = in * (1-t) + 雾色 * t
+            val cm = ColorMatrix(
+                floatArrayOf(
+                    inv, 0f, 0f, 0f, fr * t * 255f,
+                    0f, inv, 0f, 0f, fg * t * 255f,
+                    0f, 0f, inv, 0f, fb * t * 255f,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
+            fogPaints[i].colorFilter = ColorMatrixColorFilter(cm)
+            fogPaints[i].alpha = 255
+        }
+    }
+
+    /**
+     * 伪 3D 绘制一艘飞船：
+     *   ① 向下偏移的黑色剪影 = 投影（离地悬浮感）
+     *   ② 略微下移的黑色剪影 = 挤出厚度（机身有立体边）
+     *   ③ 主体贴图，带横滚与纵向压扁（压坡度）
+     *
+     * @param depth 视觉缩放（1 = 最近）
+     * @param roll  横滚角（弧度）
+     * @param shadow 投影强度 0..1
+     * @param fogIdx 景深雾化档位；-1 表示不雾化
+     */
+    private fun drawShip3D(
+        c: Canvas,
+        bmp: Bitmap,
+        x: Float,
+        y: Float,
+        r: Float,
+        alpha: Int = 255,
+        roll: Float = 0f,
+        depth: Float = 1f,
+        shadow: Float = 1f,
+        fogIdx: Int = -1
+    ) {
+        val half = bmp.width * 0.5f * (r / sp.planeBase) * depth
+        if (half < 0.6f) return
+
+        // ① 投影：压扁 + 下移，纯黑剪影
+        if (shadow > 0.02f) {
+            val sy = y + dp(4.5f) * depth
+            val squash = 0.52f
+            shadowPaint.alpha = (alpha * 0.40f * shadow).toInt().coerceIn(0, 255)
+            dst.set(x - half * 0.94f, sy - half * squash, x + half * 0.94f, sy + half * squash)
+            c.drawBitmap(bmp, null, dst, shadowPaint)
+        }
+
+        // ② 厚度层：略微下移的剪影，露出底边形成挤出感
+        val t = dp(1.7f) * depth
+        shadowPaint.alpha = (alpha * 0.8f).toInt().coerceIn(0, 255)
+        dst.set(x - half, y - half + t, x + half, y + half + t)
+        c.drawBitmap(bmp, null, dst, shadowPaint)
+
+        // ③ 主体
+        val body = if (fogIdx >= 0) fogPaints[fogIdx] else spritePaint
+        body.alpha = alpha
+        if (abs(roll) > 0.002f) {
+            c.save()
+            c.rotate(roll * (180f / PI.toFloat()), x, y)
+            c.scale(1f, 1f - abs(roll) * 0.24f, x, y)   // 压坡度时纵向收缩
+            dst.set(x - half, y - half, x + half, y + half)
+            c.drawBitmap(bmp, null, dst, body)
+            c.restore()
+        } else {
+            dst.set(x - half, y - half, x + half, y + half)
+            c.drawBitmap(bmp, null, dst, body)
+        }
+        body.alpha = 255
+    }
+
+    // ---------------- 背景层 ----------------
+
     private fun drawNebula(c: Canvas) {
         for (n in nebs) {
-            spritePaint.alpha = n.alpha
-            val half = n.scale * 0.5f
+            // 星云越往下越靠近镜头 → 一边变大一边变亮，强化纵深
+            val d = 0.86f + 0.26f * depthAt(n.y)
+            spritePaint.alpha = (n.alpha * (0.7f + 0.3f * depthAt(n.y))).toInt().coerceIn(0, 255)
+            val half = n.scale * 0.5f * d
             dst.set(n.x - half, n.y - half, n.x + half, n.y + half)
             val bmp = when (n.variant) {
                 0 -> sp.nebulaA
@@ -3402,13 +3586,42 @@ class GameView(
         spritePaint.alpha = 255
     }
 
+    /**
+     * 透视星空：每颗星按 k = 焦距 / z 投到屏幕上，
+     * 再从「更远一点」的位置拉一条线到当前位置，形成朝镜头飞来的拉丝。
+     */
     private fun drawStars(c: Canvas) {
+        val cx = vpX
+        val cy = vpY
+        val margin = dp(24f)
         for (s in stars) {
-            val a = (s.alpha * (0.6f + 0.4f * sin(s.phase))).toInt().coerceIn(0, 255)
-            spritePaint.alpha = a
-            val half = s.size * 2.8f
-            dst.set(s.x - half, s.y - half, s.x + half, s.y + half)
-            c.drawBitmap(sp.starBmp, null, dst, spritePaint)
+            val zc = max(s.z, zNear)
+            val k = projK(zc)
+            val sx = cx + s.dx * k
+            val sy = cy + s.dy * k
+            if (sx < -margin || sx > vw + margin || sy < -margin || sy > vh + margin) continue
+
+            // 拖尾起点
+            val kt = projK(min(zFar * 1.2f, zc * trailK))
+            val tx = cx + s.dx * kt
+            val ty = cy + s.dy * kt
+
+            val near = (1f - zc / zFar).coerceIn(0f, 1f)     // 0 远 → 1 近
+            val twinkle = 0.62f + 0.38f * sin(s.phase)
+            val a = (s.alpha * (0.30f + 0.70f * near) * twinkle).toInt().coerceIn(0, 255)
+            if (a <= 3) continue
+
+            warpPaint.color = a.shl(24) or 0x00BFE9FF
+            warpPaint.strokeWidth = dp(0.9f) + near * dp(2.3f)
+            c.drawLine(tx, ty, sx, sy, warpPaint)
+
+            // 近处的星再叠一颗亮核
+            if (near > 0.5f) {
+                val half = s.size * (0.9f + near * 1.7f) * 1.8f
+                spritePaint.alpha = a
+                dst.set(sx - half, sy - half, sx + half, sy + half)
+                c.drawBitmap(sp.starBmp, null, dst, spritePaint)
+            }
         }
         spritePaint.alpha = 255
     }
@@ -3443,7 +3656,16 @@ class GameView(
         paint.color = 0x3333E5FF
         c.drawCircle(px, py, playerR * 2.1f, paint)
 
-        drawPlaneBmp(c, sp.player, px, py, playerR)
+        // 玩家永远在最前层：不做雾化、不缩小，只吃横滚和立体投影
+        drawShip3D(c, sp.player, px, py, playerR, roll = playerRoll, depth = 1f, shadow = 1f)
+    }
+
+    /** 敌机横滚：横向速度压坡度 + 一点自然摆动，让机队"活"起来 */
+    private fun enemyRoll(e: Enemy): Float {
+        val fromVx = e.vx * 0.0018f
+        val sway = sin(e.phase * 1.7f) * 0.06f
+        val r = (fromVx + sway).coerceIn(-0.42f, 0.42f)
+        return if (e.kind == K_BOSS) r * 0.5f else r
     }
 
     private fun drawWingmen(c: Canvas) {
@@ -3493,10 +3715,15 @@ class GameView(
                 sp.enemies[e.kind]
             } ?: continue
 
+            // 景深：越靠屏幕上方越远 → 越小、越暗、越雾
+            val depth = depthAt(e.y)
+            val dScale = depthScaleAt(depth)
+            val fogIdx = fogIdxFor(depth)
+
             if (e.kind == K_BOSS || e.r > dp(18f)) {
                 paint.style = Paint.Style.FILL
                 paint.color = 0x33FF1744
-                c.drawCircle(e.x, e.y, e.r * 1.7f, paint)
+                c.drawCircle(e.x, e.y, e.r * 1.7f * dScale, paint)
             }
 
             if (e.kind == K_SNIPER && e.charging) {
@@ -3506,12 +3733,18 @@ class GameView(
                 c.drawLine(e.x, e.y, px, py, paint)
             }
 
-            drawPlaneBmp(c, bmp, e.x, e.y, e.r)
+            drawShip3D(
+                c, bmp, e.x, e.y, e.r,
+                roll = enemyRoll(e),
+                depth = dScale,
+                shadow = 0.45f + 0.55f * depth,
+                fogIdx = fogIdx
+            )
 
             if (e.shielded) {
                 val f = e.shieldHp.toFloat() / max(1, e.shieldMax)
                 spritePaint.alpha = (90 + 100 * f).toInt().coerceIn(0, 255)
-                val half = e.r * 2.3f
+                val half = e.r * 2.3f * dScale
                 dst.set(e.x - half, e.y - half, e.x + half, e.y + half)
                 c.drawBitmap(sp.shieldRing, null, dst, spritePaint)
                 spritePaint.alpha = 255
@@ -3521,7 +3754,7 @@ class GameView(
                 val a = (e.flash * 190f).toInt().coerceIn(0, 255)
                 paint.style = Paint.Style.FILL
                 paint.color = a.shl(24) or 0x00FFFFFF
-                c.drawCircle(e.x, e.y, e.r * 0.9f, paint)
+                c.drawCircle(e.x, e.y, e.r * 0.9f * dScale, paint)
             }
 
             if (e.kind == K_TANK || e.kind == K_ELITE || e.kind == K_SHIELDED ||
@@ -3553,10 +3786,14 @@ class GameView(
     private fun drawPowerUps(c: Canvas) {
         for (p in powerups) {
             val bmp = sp.powerups[p.kind] ?: continue
+            val depth = depthAt(p.y)
+            val s = depthScaleAt(depth)
             val bob = sin(p.phase) * dp(3f)
-            val half = bmp.width * 0.5f
+            val half = bmp.width * 0.5f * s
+            val fp = fogPaints[fogIdxFor(depth)]
+            fp.alpha = 255
             dst.set(p.x - half, p.y + bob - half, p.x + half, p.y + bob + half)
-            c.drawBitmap(bmp, null, dst, spritePaint)
+            c.drawBitmap(bmp, null, dst, fp)
         }
     }
 
@@ -3884,7 +4121,11 @@ class GameView(
 
     private fun drawMenu(c: Canvas) {
         val bob = sin(menuTime * 1.6f) * dp(6f)
-        drawPlaneBmp(c, sp.player, vw * 0.5f, vh * 0.075f + bob, dp(21f))
+        // 主菜单的英雄机：慢慢左右摇摆，配合立体投影，像悬停在星空里
+        drawShip3D(
+            c, sp.player, vw * 0.5f, vh * 0.075f + bob, dp(21f),
+            roll = sin(menuTime * 0.9f) * 0.20f, depth = 1f, shadow = 1f
+        )
 
         paint.color = 0xFF4FC3F7.toInt()
         paint.textSize = dp(32f)
@@ -4945,7 +5186,7 @@ class GameView(
         drawButton(c, btnBack, "返回", 0x5529B6F6, 0xFF29B6F6.toInt(), 0xFFFFFFFF.toInt(), dp(16f))
     }
 
-    /** 开箱 / 领奖的结果弹层 */
+    /** 开箱 / 领奖的结果弹层：卡片带透视翻牌 */
     private fun drawBoxResult(c: Canvas) {
         if (boxTimer <= 0f) return
         val a = (min(1f, boxTimer / 0.30f) * 255f).toInt().coerceIn(0, 255)
@@ -4959,26 +5200,64 @@ class GameView(
         val x = (vw - w) / 2f
         val y = vh * 0.34f
         val box = RectF(x, y, x + w, y + h)
+        val cx = vw / 2f
+        val cy = y + h / 2f
 
-        paint.color = ((a * 0.94f).toInt().coerceIn(0, 255)).shl(24) or 0x00101820
-        c.drawRoundRect(box, dp(18f), dp(18f), paint)
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = dp(2.5f)
-        paint.color = a.shl(24) or (boxColor and 0x00FFFFFF)
-        c.drawRoundRect(box, dp(18f), dp(18f), paint)
+        // ---- 透视翻牌：前半程看到牌背，后半程翻出结果 ----
+        val elapsed = BOX_POPUP_TIME - boxTimer
+        val flip = (elapsed / BOX_FLIP_TIME).coerceIn(0f, 1f)
+        val sy = max(0.06f, abs(cos(flip * PI.toFloat())))   // 纵向压扁 = 卡片转过去
+        val sx = 1f - 0.10f * (1f - sy)                      // 横向也收一点，像真的透视
+        val showFront = flip >= 0.5f
 
+        c.save()
+        c.scale(sx, sy, cx, cy)
+
+        // 卡片投影（随翻牌一起收窄）
         paint.style = Paint.Style.FILL
-        paint.textAlign = Paint.Align.CENTER
-        drawStarIcon(c, vw / 2f, y + dp(20f), dp(11f), true)
-        paint.color = a.shl(24) or (boxColor and 0x00FFFFFF)
-        paint.textSize = dp(20f)
-        c.drawText(boxTitle, vw / 2f, y + dp(62f), paint)
-        paint.color = a.shl(24) or 0x00E0E0E0
-        paint.textSize = dp(13f)
-        c.drawText(boxSub, vw / 2f, y + dp(88f), paint)
-        paint.color = a.shl(24) or 0x0080CBC4
-        paint.textSize = dp(11f)
-        c.drawText("点击任意位置关闭", vw / 2f, y + dp(114f), paint)
+        paint.color = ((a * 0.45f).toInt().coerceIn(0, 255)).shl(24)
+        val sh = RectF(box)
+        sh.offset(0f, dp(7f))
+        c.drawRoundRect(sh, dp(18f), dp(18f), paint)
+
+        if (showFront) {
+            paint.color = ((a * 0.96f).toInt().coerceIn(0, 255)).shl(24) or 0x00101820
+            c.drawRoundRect(box, dp(18f), dp(18f), paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(2.5f)
+            paint.color = a.shl(24) or (boxColor and 0x00FFFFFF)
+            c.drawRoundRect(box, dp(18f), dp(18f), paint)
+
+            paint.style = Paint.Style.FILL
+            paint.textAlign = Paint.Align.CENTER
+            drawStarIcon(c, cx, y + dp(20f), dp(11f), true)
+            paint.color = a.shl(24) or (boxColor and 0x00FFFFFF)
+            paint.textSize = dp(20f)
+            c.drawText(boxTitle, cx, y + dp(62f), paint)
+            paint.color = a.shl(24) or 0x00E0E0E0
+            paint.textSize = dp(13f)
+            c.drawText(boxSub, cx, y + dp(88f), paint)
+            paint.color = a.shl(24) or 0x0080CBC4
+            paint.textSize = dp(11f)
+            c.drawText("点击任意位置关闭", cx, y + dp(114f), paint)
+        } else {
+            // 牌背：一枚空心星，暗示"还没翻开"
+            paint.color = ((a * 0.96f).toInt().coerceIn(0, 255)).shl(24) or 0x001A2740
+            c.drawRoundRect(box, dp(18f), dp(18f), paint)
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = dp(2.5f)
+            paint.color = a.shl(24) or 0x66FFD54F
+            c.drawRoundRect(box, dp(18f), dp(18f), paint)
+
+            paint.style = Paint.Style.FILL
+            paint.textAlign = Paint.Align.CENTER
+            drawStarIcon(c, cx, cy - dp(12f), dp(22f), false)
+            paint.color = a.shl(24) or 0xAAFFD54F.toInt()
+            paint.textSize = dp(14f)
+            c.drawText("开启中…", cx, cy + dp(36f), paint)
+        }
+        c.restore()
+
         paint.textAlign = Paint.Align.LEFT
     }
 }
