@@ -16,15 +16,25 @@ import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 GRADLE = os.path.join(BASE, "AirForce", "app", "build.gradle.kts")
-APK = os.path.join(BASE, "AirForce", "app", "build", "outputs", "apk", "debug", "app-debug.apk")
+APK_RELEASE = os.path.join(BASE, "AirForce", "app", "build", "outputs", "apk", "release", "app-release.apk")
+APK_DEBUG = os.path.join(BASE, "AirForce", "app", "build", "outputs", "apk", "debug", "app-debug.apk")
 SITE = os.path.join(BASE, "update_site")
 MANIFEST = os.path.join(SITE, "version.json")
 
 
+def pick_apk():
+    """优先用正式签名的 release 包，没有就退回 debug 包。"""
+    for p in (APK_RELEASE, APK_DEBUG):
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def main() -> int:
-    if not os.path.exists(APK):
+    apk = pick_apk()
+    if apk is None:
         print("找不到 APK，请先编译：")
-        print("  " + APK)
+        print("  " + APK_RELEASE)
         return 1
 
     src = open(GRADLE, encoding="utf-8").read()
@@ -43,7 +53,7 @@ def main() -> int:
             notes = ""
 
     os.makedirs(SITE, exist_ok=True)
-    shutil.copyfile(APK, os.path.join(SITE, "app.apk"))
+    shutil.copyfile(apk, os.path.join(SITE, "app.apk"))
     json.dump(
         {"versionCode": code, "versionName": name, "apkUrl": "app.apk", "notes": notes},
         open(MANIFEST, "w", encoding="utf-8"),
@@ -51,6 +61,7 @@ def main() -> int:
         indent=2,
     )
     print("已发布：v%s (build %d)" % (name, code))
+    print("  来源   -> " + apk)
     print("  APK    -> " + os.path.join(SITE, "app.apk"))
     print("  清单   -> " + MANIFEST)
     return 0

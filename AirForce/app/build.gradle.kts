@@ -12,6 +12,15 @@ val keystoreProps = Properties().apply {
 }
 val hasReleaseKey = keystoreProps.getProperty("storeFile") != null
 
+// 本机私有配置（SDK 路径、局域网更新地址），该文件同样不入库。
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+// 局域网更新服务地址，例如 http://192.168.1.13:8765
+// 只有本机开发时才需要在 local.properties 里配这一行，不配就只走公网源。
+val lanUpdateUrl = localProps.getProperty("lanUpdateUrl") ?: ""
+
 android {
     namespace = "com.example.airforce"
     compileSdk = 37
@@ -22,6 +31,12 @@ android {
         targetSdk = 37
         versionCode = 3
         versionName = "1.2"
+
+        buildConfigField("String", "LAN_UPDATE_URL", "\"$lanUpdateUrl\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     signingConfigs {

@@ -137,6 +137,21 @@ keyPassword=你的密码
 
 `build.gradle.kts` 会自动读取它。**没有这个文件时 release 会自动退回 debug 签名，依然能编译通过。**
 
+### 关于本机私有配置
+
+`AirForce/local.properties` 同样不入库，里面除了 SDK 路径，还可以配局域网更新地址：
+
+```properties
+sdk.dir=C:/你的/Android/Sdk
+lanUpdateUrl=http://192.168.1.100:8765
+```
+
+`lanUpdateUrl` 会被编译进 `BuildConfig.LAN_UPDATE_URL`，游戏启动检查更新时会优先访问它（局域网比公网快），失败则自动回落到公网更新源。
+
+不配这一行也能正常编译和运行，只是不启用局域网更新。
+
+> 这样设计的原因：内网 IP、主机名这类信息不应该出现在公开仓库里。代码里只保留公网地址，私有地址全部走本地配置文件注入。
+
 ---
 
 ## 辅助脚本

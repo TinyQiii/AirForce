@@ -11,10 +11,13 @@ rem     <string name="app_name">AirForce</string>
 rem  Save it, then just double-click this script.
 rem ==========================================================
 
+rem ---- 路径配置（默认值适配标准安装，装到别处请自行改）----
 set "JAVA_HOME=C:\Program Files\Android\Android Studio\jbr"
-set "GRADLE=d:\trae\6abddf2151f45b3345d9588e\.tools\gradle-9.8.0\bin\gradle.bat"
-set "ADB=C:\Users\yuki\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-set "PROJ=d:\trae\6abddf2151f45b3345d9588e\AirForce"
+set "GRADLE=%~dp0.tools\gradle-9.8.0\bin\gradle.bat"
+if not exist "%GRADLE%" set "GRADLE=gradle"
+set "ADB=%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"
+if not exist "%ADB%" set "ADB=adb"
+set "PROJ=%~dp0AirForce"
 set "APK=%PROJ%\app\build\outputs\apk\debug\app-debug.apk"
 
 echo.

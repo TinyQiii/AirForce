@@ -8,8 +8,9 @@ rem  手机和电脑连同一个 Wi-Fi 时，游戏启动会自动来检查更�
 rem  保持这个黑窗口开着即可；关掉 = 停止服务（游戏不会报错）。
 rem ==========================================================
 
-set "PY=C:\Users\yuki\.workbuddy-ai\binaries\python\versions\3.13.12\python.exe"
-if not exist "%PY%" set "PY=python"
+rem 需要系统里有 python（或 py）命令
+set "PY=python"
+where %PY% >nul 2>&1 || set "PY=py"
 
 "%PY%" "%~dp0update_server.py"
 

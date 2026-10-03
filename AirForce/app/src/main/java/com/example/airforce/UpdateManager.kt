@@ -25,17 +25,26 @@ import java.net.URL
  * 注意：Android 不允许 App 静默替换自己，最后一定会弹系统「安装」确认，
  * 玩家点一下即可 —— 但不用连电脑、不用敲命令了。
  */
+/** 公网更新源：下载页所在地址。分享给别人的手机靠它更新。 */
+private const val PUBLIC_UPDATE_URL = "https://11f45519734a4dcd8e70a1e081330ac2.sg2.agentos-app.run"
+
+/**
+ * 局域网更新源（见项目根目录的 启动更新服务.bat）。
+ * 地址从 local.properties 的 lanUpdateUrl 注入 —— 那个文件不入库，
+ * 所以仓库里不会出现任何人的内网 IP。没配就只走公网源。
+ */
+private val LAN_UPDATE_URL = BuildConfig.LAN_UPDATE_URL
+
 /**
  * 更新源候选地址，按顺序尝试，第一个能通的生效。
- *
- * 当前指向「电脑上的小服务」（局域网，见项目根目录的 启动更新服务.bat）。
- * 以后云服务固定域名开通后，把公网地址插到最前面即可 —— 游戏侧只改这一处。
+ * 本机开发时局域网更快所以排在前面；手机在外网时自动回落到公网源。
  */
-internal val UPDATE_SOURCES = listOf(
-    "http://192.168.1.13:8765",
-    "http://192.168.1.14:8765",
-    "http://desktop-r0opktq.local:8765"
-)
+internal val UPDATE_SOURCES: List<String> = run {
+    val list = ArrayList<String>(2)
+    if (LAN_UPDATE_URL.isNotBlank()) list.add(LAN_UPDATE_URL)
+    list.add(PUBLIC_UPDATE_URL)
+    list
+}
 
 internal data class UpdateInfo(
     val versionCode: Int,
