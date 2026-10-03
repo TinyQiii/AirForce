@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>飞机大战 - 下载</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #05070f;
+  color: #e0e6ed;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* animated starfield */
+.stars {
+  position: fixed; inset:0; z-index:0; pointer-events:none;
+  background: radial-gradient(ellipse at bottom, #0a0f2e 0%, #02040a 100%);
+}
+.star {
+  position: absolute; background: #fff; border-radius: 50%;
+  animation: twinkle var(--d) ease-in-out infinite;
+  opacity: var(--o);
+}
+@keyframes twinkle {
+  0%,100% { opacity: var(--o); transform: scale(1); }
+  50% { opacity: calc(var(--o) * 0.3); transform: scale(0.7); }
+}
+
+.content { position:relative; z-index:1; }
+
+/* hero */
+.hero {
+  min-height: 100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; padding: 40px 20px 60px;
+}
+.plane-icon {
+  width: 72px; height: 72px; margin-bottom: 20px;
+  filter: drop-shadow(0 0 20px rgba(79,195,247,0.4));
+}
+.hero h1 {
+  font-size: 42px; font-weight: 700; letter-spacing: 8px;
+  background: linear-gradient(135deg, #4fc3f7, #69f0ae);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  margin-bottom: 10px;
+}
+.hero .tagline {
+  color: #90caf9; font-size: 15px; margin-bottom: 30px;
+}
+.hero .meta {
+  color: #78909c; font-size: 13px; margin-bottom: 32px;
+}
+
+.download-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 16px 44px; border-radius: 50px; border: none;
+  background: linear-gradient(135deg, #29b6f6, #69f0ae);
+  color: #fff; font-size: 18px; font-weight: 600;
+  text-decoration: none; cursor: pointer;
+  box-shadow: 0 8px 32px rgba(41,182,246,0.3);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.download-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(41,182,246,0.45); }
+.download-btn svg { width: 22px; height: 22px; fill: currentColor; }
+
+.version-badge {
+  margin-top: 16px; display: inline-flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+}
+.version-badge span {
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+  padding: 5px 14px; border-radius: 20px; font-size: 12px; color: #b0bec5;
+}
+
+.scroll-hint {
+  position: absolute; bottom: 24px; left:50%; transform: translateX(-50%);
+  animation: bounce 2s infinite;
+}
+@keyframes bounce { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(8px)} }
+.scroll-hint svg { width: 24px; height: 24px; stroke: #78909c; fill:none; stroke-width:2; }
+
+/* sections */
+.section {
+  max-width: 800px; margin: 0 auto; padding: 60px 24px;
+}
+.section-title {
+  font-size: 24px; font-weight: 700; color: #fff; text-align: center; margin-bottom: 36px;
+}
+
+/* features */
+.features {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;
+}
+.feature-card {
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px; padding: 24px; text-align: center;
+  transition: transform 0.2s, border-color 0.2s;
+}
+.feature-card:hover { transform: translateY(-4px); border-color: rgba(79,195,247,0.2); }
+.feature-icon {
+  width: 48px; height: 48px; margin: 0 auto 14px;
+  display:flex; align-items:center; justify-content:center;
+  border-radius: 14px; font-size: 24px;
+}
+.feature-card h3 { font-size: 16px; color: #fff; margin-bottom: 6px; }
+.feature-card p { font-size: 13px; color: #90caf9; }
+
+/* screenshots */
+.screenshots {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;
+}
+.screenshot {
+  border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02); transition: transform 0.2s;
+}
+.screenshot:hover { transform: scale(1.03); }
+.screenshot img { width: 100%; height: auto; display: block; }
+.screenshot-caption {
+  padding: 10px 12px; font-size: 12px; color: #78909c; text-align: center;
+}
+
+/* install guide */
+.guide-steps { display:flex; flex-direction:column; gap: 20px; }
+.step {
+  display:flex; gap: 18px; align-items: flex-start;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 16px; padding: 22px;
+}
+.step-num {
+  flex-shrink:0; width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, #29b6f6, #69f0ae);
+  display:flex; align-items:center; justify-content:center;
+  font-weight: 700; font-size: 16px; color: #fff;
+}
+.step-body h4 { font-size: 16px; color: #fff; margin-bottom: 6px; }
+.step-body p { font-size: 14px; color: #b0bec5; }
+.step-body .warn { color: #ff8a80; font-size: 13px; margin-top: 6px; }
+.step-body code {
+  background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 4px;
+  font-size: 13px; color: #69f0ae; font-family: "SF Mono", "Cascadia Code", monospace;
+}
+
+/* warning box */
+.warn-box {
+  background: rgba(255,138,128,0.08); border: 1px solid rgba(255,138,128,0.2);
+  border-radius: 12px; padding: 16px 20px; margin-top: 24px;
+}
+.warn-box h4 { color: #ff8a80; font-size: 15px; margin-bottom: 8px; }
+.warn-box p { color: #ffab91; font-size: 13px; }
+
+/* footer */
+.footer {
+  text-align:center; padding: 40px 20px; color: #546e7a; font-size: 12px;
+}
+.footer a { color: #78909c; text-decoration: none; }
+
+/* responsive */
+@media (max-width: 480px) {
+  .hero h1 { font-size: 32px; letter-spacing: 4px; }
+  .section { padding: 40px 16px; }
+  .download-btn { padding: 14px 32px; font-size: 16px; }
+}
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<div class="content">
+
+<!-- Hero -->
+<section class="hero">
+  <svg class="plane-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#4fc3f7"/>
+        <stop offset="100%" stop-color="#69f0ae"/>
+      </linearGradient>
+    </defs>
+    <polygon points="50,5 62,38 95,38 68,58 78,92 50,72 22,92 32,58 5,38 38,38" fill="url(#pg)" opacity="0.9"/>
+    <polygon points="50,15 58,38 82,38 64,52 70,76 50,62 30,76 36,52 18,38 42,38" fill="#fff" opacity="0.15"/>
+  </svg>
+
+  <h1>飞机大战</h1>
+  <p class="tagline">12 关战役 · 13 种敌机 · 5 种 BOSS · 5 种武器 · 奖励系统</p>
+  <p class="meta">版本 1.2 · 约 38 MB · Android 8.0 及以上</p>
+
+  <a href="app.apk" class="download-btn" download>
+    <svg viewBox="0 0 24 24"><path d="M12 15V3m0 12l-4-4m4 4l4-4M2 17l.621 2.485A2 2 0 0 0 4.561 21h14.878a2 2 0 0 0 1.94-1.515L22 17"/></svg>
+    立即下载 APK
+  </a>
+
+  <div class="version-badge">
+    <span>v1.2</span>
+    <span>release 正式签名</span>
+    <span>离线账号 + 存档</span>
+  </div>
+
+  <div class="scroll-hint">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="section">
+  <h2 class="section-title">游戏特色</h2>
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(41,182,246,0.12);">&#128640;</div>
+      <h3>12 关战役</h3>
+      <p>从星际前哨一路打到虚空王座，每关都有独特敌机与 BOSS</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(105,240,174,0.12);">&#11088;</div>
+      <h3>奖励系统</h3>
+      <p>每日签到 + 任务 + 开箱抽奖 + 关卡三星评级，奖励拿到手软</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(255,138,128,0.12);">&#9876;</div>
+      <h3>5 种武器</h3>
+      <p>标准、激光、散射、环形、追踪弹，自由切换不同打法</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(255,171,64,0.12);">&#128737;</div>
+      <h3>战机与装备</h3>
+      <p>6 架战机 + 4 种僚机 + 6 件被动装备，搭配属于你的流派</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(126,87,194,0.12);">&#127918;</div>
+      <h3>多种模式</h3>
+      <p>战役 / 无尽 / BOSS 连战 / 每日挑战，总有一款适合你</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(224,64,251,0.12);">&#128274;</div>
+      <h3>本地账号</h3>
+      <p>无需联网注册，数据存在本地，支持多账号切换</p>
+    </div>
+  </div>
+</section>
+
+<!-- Screenshots -->
+<section class="section">
+  <h2 class="section-title">游戏截图</h2>
+  <div class="screenshots">
+    <div class="screenshot">
+      <img src="screenshot_menu.png" alt="主菜单" loading="lazy">
+      <div class="screenshot-caption">主菜单 · 多种模式入口</div>
+    </div>
+    <div class="screenshot">
+      <img src="screenshot_gameplay.png" alt="战斗画面" loading="lazy">
+      <div class="screenshot-caption">战斗画面 · 弹幕与连击</div>
+    </div>
+    <div class="screenshot">
+      <img src="screenshot_pause.png" alt="暂停菜单" loading="lazy">
+      <div class="screenshot-caption">暂停菜单 · 支持退出</div>
+    </div>
+    <div class="screenshot">
+      <img src="screenshot_login.png" alt="账号系统" loading="lazy">
+      <div class="screenshot-caption">本地账号 · 登录注册</div>
+    </div>
+  </div>
+</section>
+
+<!-- Install Guide -->
+<section class="section">
+  <h2 class="section-title">安装教程</h2>
+  <div class="guide-steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <h4>点击上方「立即下载 APK」按钮</h4>
+        <p>浏览器会下载 <code>app.apk</code> 文件（约 38 MB）。下载完成后，下拉通知栏点击文件，或到「文件管理 → 下载」里找到它。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <h4>允许安装未知来源应用</h4>
+        <p>因为这不是应用商店下载的，系统会提示「禁止安装」。点击「设置」→ 找到「安装未知应用 / 外部来源应用」→ 把对应浏览器的开关打开。</p>
+        <p class="warn">不同品牌手机入口略有不同：vivo/OPPO 在「设置 → 安全与隐私」；小米在「设置 → 隐私保护 → 特殊权限设置」；华为在「设置 → 安全 → 更多安全设置」。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <h4>返回安装界面，点击「安装」</h4>
+        <p>系统会弹安装确认框，点「继续安装」。因为 APK 使用了正式签名（release build），不会提示「开发者未验证」。</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <h4>打开游戏，注册账号即可开始</h4>
+        <p>首次进入需要注册一个本地账号（用户名 2~16 位，密码至少 3 位）。之后所有进度、金币、解锁内容都会跟着这个账号保存。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="warn-box">
+    <h4>&#9888; 安全提示</h4>
+    <p>本游戏为单机离线游戏，所有数据存储在本地，不会上传任何信息。安装包使用正式签名，不含任何恶意代码。如果你是从本页面下载，请认准域名。请勿安装来路不明的 APK。</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<div class="footer">
+  <p>飞机大战 v1.2 · 仅供学习交流使用</p>
+  <p style="margin-top:6px">如果在安装过程中遇到问题，请确保 Android 版本在 8.0 及以上</p>
+</div>
+
+</div>
+
+<script>
+// generate starfield
+const stars = document.getElementById('stars');
+for (let i = 0; i < 120; i++) {
+  const s = document.createElement('div');
+  s.className = 'star';
+  s.style.left = Math.random() * 100 + '%';
+  s.style.top = Math.random() * 100 + '%';
+  const size = Math.random() * 2.5 + 0.5;
+  s.style.width = size + 'px';
+  s.style.height = size + 'px';
+  s.style.setProperty('--o', (0.3 + Math.random() * 0.7).toFixed(2));
+  s.style.setProperty('--d', (2 + Math.random() * 4).toFixed(1) + 's');
+  s.style.animationDelay = (Math.random() * 5) + 's';
+  stars.appendChild(s);
+}
+
+// smooth reveal on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.feature-card, .screenshot, .step').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(24px)';
+  el.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>
